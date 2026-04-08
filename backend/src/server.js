@@ -1,24 +1,36 @@
 import express from 'express';
 import cors from 'cors';
+import dotenv from 'dotenv';
 import pool from './config/db.js';
 import PDFDocument from 'pdfkit';
 import twilio from 'twilio';
 
-const client = twilio(
-  process.env.TWILIO_SID,
-  process.env.TWILIO_TOKEN
-);
+dotenv.config();
 
+/* =========================
+   CONFIG
+========================= */
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 app.use(cors());
 app.use(express.json());
 
 /* =========================
-   🔥 TWILIO CONFIG
+   TWILIO (SAFE INIT)
 ========================= */
+let client = null;
 
+if (process.env.TWILIO_SID && process.env.TWILIO_TOKEN) {
+  client = twilio(
+    process.env.TWILIO_SID,
+    process.env.TWILIO_TOKEN
+  );
+  console.log("✅ Twilio listo");
+} else {
+  console.log("⚠️ Twilio no configurado");
+}
 
 /* =========================
    GET PRODUCTS
@@ -43,7 +55,7 @@ app.get('/products', async (req, res) => {
 });
 
 /* =========================
-   POST SALES + WHATSAPP 🔥
+   POST SALES + WHATSAPP
 ========================= */
 app.post('/sales', async (req, res) => {
   const { items, client_phone } = req.body;
@@ -97,16 +109,18 @@ app.post('/sales', async (req, res) => {
       [total, sale.id]
     );
 
-    const invoice_url = `http://localhost:3000/sales/${sale.id}/pdf`;
+    /* 🔥 URL CORRECTA PARA TWILIO */
+    const invoice_url = `${BASE_URL}/sales/${sale.id}/pdf`;
+
+    console.log("📄 URL PDF:", invoice_url);
 
     /* =========================
-       📲 ENVIAR WHATSAPP (FIX)
+       WHATSAPP
     ========================= */
-    if (client_phone) {
+    if (client && client_phone) {
 
       let cleanPhone = client_phone.replace(/\D/g, '');
 
-      // 🔥 evita duplicar 57
       if (cleanPhone.startsWith('57')) {
         cleanPhone = cleanPhone.slice(2);
       }
@@ -121,8 +135,8 @@ app.post('/sales', async (req, res) => {
           await client.messages.create({
             from: 'whatsapp:+14155238886',
             to: finalNumber,
-            body: `🧾 Hola, aquí tienes tu factura`,
-            mediaUrl: [invoice_url] // 🔥 ESTO ES LA MAGIA
+            body: `🧾 Hola, aquí tienes tu factura: ${invoice_url}`,
+            mediaUrl: [invoice_url]
           });
 
           console.log("✅ WhatsApp enviado");
@@ -134,6 +148,9 @@ app.post('/sales', async (req, res) => {
       } else {
         console.log("❌ Número inválido:", cleanPhone);
       }
+
+    } else {
+      console.log("⚠️ No se envió WhatsApp (faltan datos)");
     }
 
     res.status(201).json({
@@ -150,7 +167,7 @@ app.post('/sales', async (req, res) => {
 });
 
 /* =========================
-   PDF FACTURA
+   PDF
 ========================= */
 app.get('/sales/:id/pdf', async (req, res) => {
   try {
@@ -206,7 +223,7 @@ app.get('/sales/:id/pdf', async (req, res) => {
 
     doc.text(`SUBTOTAL: $${subtotalGeneral.toFixed(2)}`, { align: 'center' });
     doc.text(`IVA (19%): $${iva.toFixed(2)}`, { align: 'center' });
-    
+
     doc.text('--------------------------');
     doc.text(`TOTAL: $${total.toFixed(2)}`, { align: 'center' });
 
@@ -218,6 +235,9 @@ app.get('/sales/:id/pdf', async (req, res) => {
   }
 });
 
+/* =========================
+   START
+========================= */
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
 });
