@@ -10,7 +10,7 @@ function App() {
   const [showChange, setShowChange] = useState(false)
   const [lastSale, setLastSale] = useState(null)
 
-  const IVA = 0.19
+  const IVA_RATE = 0.19
 
   useEffect(() => {
     fetch("http://localhost:3000/products")
@@ -45,14 +45,32 @@ function App() {
     setBarcodeInput("")
   }
 
-  const subtotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0)
-  const iva = subtotal * IVA
+  /* =========================
+     CALCULOS (🔥 CORRECTO)
+  ========================= */
+  const subtotal = cart.reduce(
+    (acc, item) => acc + item.price * item.quantity,
+    0
+  )
+
+  const iva = subtotal * IVA_RATE
   const total = subtotal + iva
+
   const change = cash ? parseFloat(cash) - total : 0
 
+  /* =========================
+     VENTA (🔥 ENVIA IVA)
+  ========================= */
   const handleSell = async () => {
     if (cart.length === 0) return alert("Carrito vacío")
-    if (parseFloat(cash) < total) return alert("Dinero insuficiente")
+
+    if (!cash || parseFloat(cash) < total) {
+      return alert("Dinero insuficiente")
+    }
+
+    if (sendWhatsapp && !clientPhone) {
+      return alert("Ingrese teléfono del cliente")
+    }
 
     try {
       const response = await fetch("http://localhost:3000/sales", {
@@ -63,6 +81,9 @@ function App() {
             product_id: item.id,
             quantity: item.quantity
           })),
+          subtotal,
+          iva,
+          total,
           client_phone: sendWhatsapp ? clientPhone : null
         })
       })
@@ -134,7 +155,6 @@ function App() {
                 ${product.price}
               </p>
 
-              {/* 🔥 AQUÍ ESTABA EL PROBLEMA → ESTO FALTABA */}
               <p className={`text-xs ${product.stock < 5 ? "text-red-600" : "text-gray-600"}`}>
                 Stock: {product.stock}
               </p>
@@ -225,8 +245,9 @@ function App() {
           Vaciar carrito
         </button>
 
+        {/* 🔥 TOTALES CON IVA */}
         <p className="mt-4">Subtotal: ${subtotal.toFixed(2)}</p>
-        <p>IVA: ${iva.toFixed(2)}</p>
+        <p>IVA (19%): ${iva.toFixed(2)}</p>
         <p className="text-xl font-bold">Total: ${total.toFixed(2)}</p>
 
         <div className="mt-3">

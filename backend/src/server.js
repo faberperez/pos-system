@@ -4,8 +4,16 @@ import dotenv from 'dotenv';
 import pool from './config/db.js';
 import PDFDocument from 'pdfkit';
 import twilio from 'twilio';
+import path from "path";
 
-dotenv.config();
+/* =========================
+   LOAD ENV (🔥 CLAVE)
+========================= */
+dotenv.config()
+console.log("ENV PATH:", process.cwd());
+
+console.log("📦 ENV cargado desde:", path.resolve('./.env'));
+console.log("TWILIO_SID:", process.env.TWILIO_SID ? "OK" : "NO");
 
 /* =========================
    CONFIG
@@ -16,21 +24,34 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
 app.use(cors());
 app.use(express.json());
-
+console.log("PORT RAW:", process.env.PORT);
 /* =========================
-   TWILIO (SAFE INIT)
+   TWILIO (🔥 ARREGLADO)
 ========================= */
 let client = null;
 
-if (process.env.TWILIO_SID && process.env.TWILIO_TOKEN) {
+if (!process.env.TWILIO_SID || !process.env.TWILIO_TOKEN) {
+  console.log("❌ Twilio NO configurado");
+} else {
   client = twilio(
     process.env.TWILIO_SID,
     process.env.TWILIO_TOKEN
   );
   console.log("✅ Twilio listo");
-} else {
-  console.log("⚠️ Twilio no configurado");
 }
+
+/* =========================
+   TEST DB
+========================= */
+app.get('/test-db', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM products');
+    res.json(result.rows);
+  } catch (error) {
+    console.error("❌ ERROR DB:", error);
+    res.status(500).json({ error: 'Error conexión DB' });
+  }
+});
 
 /* =========================
    GET PRODUCTS
@@ -40,25 +61,39 @@ app.get('/products', async (req, res) => {
     const result = await pool.query(
       'SELECT * FROM products ORDER BY id ASC'
     );
-
-    const products = result.rows.map(p => ({
-      ...p,
-      price: parseFloat(p.price),
-      stock: parseInt(p.stock)
-    }));
-
-    res.json(products);
+    res.json(result.rows);
   } catch (error) {
-    console.error(error);
+    console.error("❌ ERROR PRODUCTS:", error);
     res.status(500).json({ error: 'Error al obtener productos' });
   }
 });
 
 /* =========================
-   POST SALES + WHATSAPP
+   INSERT PRODUCT
+========================= */
+app.post('/products', async (req, res) => {
+  const { name, price, stock, image } = req.body;
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO products (name, price, stock, image)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [name, price, stock, image]
+    );
+
+    res.status(201).json(result.rows[0]);
+
+  } catch (error) {
+    console.error("❌ ERROR INSERT:", error);
+    res.status(500).json({ error: 'Error creando producto' });
+  }
+});
+
+/* =========================
+   SALES (🔥 IVA + WHATSAPP)
 ========================= */
 app.post('/sales', async (req, res) => {
-  const { items, client_phone } = req.body;
+  const { items, client_phone, subtotal, iva, total } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Carrito vacío' });
@@ -67,11 +102,10 @@ app.post('/sales', async (req, res) => {
   try {
     const saleResult = await pool.query(
       'INSERT INTO sales (total, client_phone) VALUES ($1, $2) RETURNING *',
-      [0, client_phone || null]
+      [total, client_phone || null]
     );
 
     const sale = saleResult.rows[0];
-    let total = 0;
 
     for (const item of items) {
       const { product_id, quantity } = item;
@@ -83,19 +117,17 @@ app.post('/sales', async (req, res) => {
 
       const product = productResult.rows[0];
 
-      const price = parseFloat(product.price);
-      const stock = parseInt(product.stock);
+      if (!product) {
+        return res.status(404).json({ error: 'Producto no existe' });
+      }
 
-      if (stock < quantity) {
+      if (product.stock < quantity) {
         return res.status(400).json({ error: 'Stock insuficiente' });
       }
 
-      const subtotal = price * quantity;
-      total += subtotal;
-
       await pool.query(
         'INSERT INTO sale_items (sale_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)',
-        [sale.id, product_id, quantity, price]
+        [sale.id, product_id, quantity, product.price]
       );
 
       await pool.query(
@@ -104,70 +136,52 @@ app.post('/sales', async (req, res) => {
       );
     }
 
-    await pool.query(
-      'UPDATE sales SET total = $1 WHERE id = $2',
-      [total, sale.id]
-    );
-
-    /* 🔥 URL CORRECTA PARA TWILIO */
     const invoice_url = `${BASE_URL}/sales/${sale.id}/pdf`;
 
-    console.log("📄 URL PDF:", invoice_url);
+    /* =========================
+       WHATSAPP LINK
+    ========================= */
+    let whatsapp_link = null;
+
+    if (client_phone) {
+      const clean = client_phone.replace(/\D/g, '');
+      whatsapp_link = `https://wa.me/57${clean}?text=Factura:%20${invoice_url}`;
+    }
 
     /* =========================
-       WHATSAPP
+       ENVÍO TWILIO
     ========================= */
     if (client && client_phone) {
+      try {
+        await client.messages.create({
+          from: 'whatsapp:+14155238886',
+          to: `whatsapp:+57${client_phone.replace(/\D/g, '')}`,
+          body: `🧾 Factura: ${invoice_url}`,
+          mediaUrl: [invoice_url]
+        });
 
-      let cleanPhone = client_phone.replace(/\D/g, '');
+        console.log("✅ WhatsApp enviado");
 
-      if (cleanPhone.startsWith('57')) {
-        cleanPhone = cleanPhone.slice(2);
+      } catch (err) {
+        console.error("❌ Error WhatsApp:", err.message);
       }
-
-      if (cleanPhone.length >= 10) {
-
-        const finalNumber = `whatsapp:+57${cleanPhone}`;
-
-        console.log("📲 Enviando a:", finalNumber);
-
-        try {
-          await client.messages.create({
-            from: 'whatsapp:+14155238886',
-            to: finalNumber,
-            body: `🧾 Hola, aquí tienes tu factura: ${invoice_url}`,
-            mediaUrl: [invoice_url]
-          });
-
-          console.log("✅ WhatsApp enviado");
-
-        } catch (err) {
-          console.error("❌ Error WhatsApp:", err.message);
-        }
-
-      } else {
-        console.log("❌ Número inválido:", cleanPhone);
-      }
-
-    } else {
-      console.log("⚠️ No se envió WhatsApp (faltan datos)");
     }
 
     res.status(201).json({
-      message: 'Venta realizada',
       sale_id: sale.id,
       total,
-      invoice_url
+      invoice_url,
+      whatsapp_link
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("❌ ERROR SALE:", error);
     res.status(500).json({ error: 'Error en la venta' });
   }
 });
 
 /* =========================
-   PDF
+   PDF (🔥 CON IVA)
 ========================= */
 app.get('/sales/:id/pdf', async (req, res) => {
   try {
@@ -180,58 +194,42 @@ app.get('/sales/:id/pdf', async (req, res) => {
       WHERE si.sale_id = $1
     `, [saleId]);
 
-    if (itemsRes.rows.length === 0) {
-      return res.status(404).send("Venta no encontrada");
-    }
-
     const doc = new PDFDocument({
       margin: 5,
       size: [200, 600]
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename=factura_${saleId}.pdf`
-    );
-
     doc.pipe(res);
 
-    doc.fontSize(12).text('MI TIENDA', { align: 'center' });
-    doc.text('--------------------------', { align: 'center' });
-    doc.text(`Factura: ${saleId}`, { align: 'center' });
-    doc.text(new Date().toLocaleString(), { align: 'center' });
+    doc.text(`Factura #${saleId}`, { align: 'center' });
 
-    doc.text('--------------------------');
-
-    let subtotalGeneral = 0;
+    let subtotalCalc = 0;
 
     itemsRes.rows.forEach(item => {
-      const subtotal = item.price * item.quantity;
-      subtotalGeneral += subtotal;
+      const sub = item.price * item.quantity;
+      subtotalCalc += sub;
 
-      doc.text(item.name, { align: 'center' });
-      doc.text(`${item.quantity} x $${item.price}`, { align: 'center' });
-      doc.text(`$${subtotal}`, { align: 'center' });
-      doc.moveDown(0.5);
+      doc.text(`${item.name}`);
+      doc.text(`${item.quantity} x ${item.price}`);
+      doc.text(`$${sub}`);
+      doc.moveDown();
     });
 
-    const iva = subtotalGeneral * 0.19;
-    const total = subtotalGeneral + iva;
+    const IVA = 0.19;
+    const ivaCalc = subtotalCalc * IVA;
+    const totalCalc = subtotalCalc + ivaCalc;
 
-    doc.text('--------------------------');
-
-    doc.text(`SUBTOTAL: $${subtotalGeneral.toFixed(2)}`, { align: 'center' });
-    doc.text(`IVA (19%): $${iva.toFixed(2)}`, { align: 'center' });
-
-    doc.text('--------------------------');
-    doc.text(`TOTAL: $${total.toFixed(2)}`, { align: 'center' });
+    doc.moveDown();
+    doc.text(`Subtotal: $${subtotalCalc.toFixed(2)}`);
+    doc.text(`IVA (19%): $${ivaCalc.toFixed(2)}`);
+    doc.text(`TOTAL: $${totalCalc.toFixed(2)}`, { align: 'center' });
 
     doc.end();
 
   } catch (error) {
     console.error(error);
-    res.status(500).send("Error generando PDF");
+    res.status(500).send("Error PDF");
   }
 });
 
@@ -239,5 +237,5 @@ app.get('/sales/:id/pdf', async (req, res) => {
    START
 ========================= */
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+  console.log(`🚀 Servidor en puerto ${PORT}`);
 });
