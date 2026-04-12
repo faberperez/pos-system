@@ -1,241 +1,113 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import pool from './config/db.js';
-import PDFDocument from 'pdfkit';
-import twilio from 'twilio';
-import path from "path";
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
 
-/* =========================
-   LOAD ENV (🔥 CLAVE)
-========================= */
-dotenv.config()
-console.log("ENV PATH:", process.cwd());
+// TWILIO
+const client = require('twilio')(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+);
 
-console.log("📦 ENV cargado desde:", path.resolve('./.env'));
-console.log("TWILIO_SID:", process.env.TWILIO_SID ? "OK" : "NO");
-
-/* =========================
-   CONFIG
-========================= */
 const app = express();
-const PORT = process.env.PORT || 3000;
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
-
 app.use(cors());
-app.use(express.json());
-console.log("PORT RAW:", process.env.PORT);
-/* =========================
-   TWILIO (🔥 ARREGLADO)
-========================= */
-let client = null;
+app.use(bodyParser.json());
 
-if (!process.env.TWILIO_SID || !process.env.TWILIO_TOKEN) {
-  console.log("❌ Twilio NO configurado");
-} else {
-  client = twilio(
-    process.env.TWILIO_SID,
-    process.env.TWILIO_TOKEN
-  );
-  console.log("✅ Twilio listo");
-}
+// Simulación de base de datos (ajusta a tu DB real)
+let sales = [];
+let currentId = 1;
 
-/* =========================
-   TEST DB
-========================= */
-app.get('/test-db', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM products');
-    res.json(result.rows);
-  } catch (error) {
-    console.error("❌ ERROR DB:", error);
-    res.status(500).json({ error: 'Error conexión DB' });
-  }
-});
-
-/* =========================
-   GET PRODUCTS
-========================= */
-app.get('/products', async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM products ORDER BY id ASC'
-    );
-    res.json(result.rows);
-  } catch (error) {
-    console.error("❌ ERROR PRODUCTS:", error);
-    res.status(500).json({ error: 'Error al obtener productos' });
-  }
-});
-
-/* =========================
-   INSERT PRODUCT
-========================= */
-app.post('/products', async (req, res) => {
-  const { name, price, stock, image } = req.body;
-
-  try {
-    const result = await pool.query(
-      `INSERT INTO products (name, price, stock, image)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [name, price, stock, image]
-    );
-
-    res.status(201).json(result.rows[0]);
-
-  } catch (error) {
-    console.error("❌ ERROR INSERT:", error);
-    res.status(500).json({ error: 'Error creando producto' });
-  }
-});
-
-/* =========================
-   SALES (🔥 IVA + WHATSAPP)
-========================= */
+// =========================
+// CREAR VENTA
+// =========================
 app.post('/sales', async (req, res) => {
-  const { items, client_phone, subtotal, iva, total } = req.body;
-
-  if (!items || items.length === 0) {
-    return res.status(400).json({ error: 'Carrito vacío' });
-  }
-
   try {
-    const saleResult = await pool.query(
-      'INSERT INTO sales (total, client_phone) VALUES ($1, $2) RETURNING *',
-      [total, client_phone || null]
-    );
+    const { clienteTelefono, items, total } = req.body;
 
-    const sale = saleResult.rows[0];
-
-    for (const item of items) {
-      const { product_id, quantity } = item;
-
-      const productResult = await pool.query(
-        'SELECT * FROM products WHERE id = $1',
-        [product_id]
-      );
-
-      const product = productResult.rows[0];
-
-      if (!product) {
-        return res.status(404).json({ error: 'Producto no existe' });
-      }
-
-      if (product.stock < quantity) {
-        return res.status(400).json({ error: 'Stock insuficiente' });
-      }
-
-      await pool.query(
-        'INSERT INTO sale_items (sale_id, product_id, quantity, price) VALUES ($1, $2, $3, $4)',
-        [sale.id, product_id, quantity, product.price]
-      );
-
-      await pool.query(
-        'UPDATE products SET stock = stock - $1 WHERE id = $2',
-        [quantity, product_id]
-      );
-    }
-
-    const invoice_url = `${BASE_URL}/sales/${sale.id}/pdf`;
-
-    /* =========================
-       WHATSAPP LINK
-    ========================= */
-    let whatsapp_link = null;
-
-    if (client_phone) {
-      const clean = client_phone.replace(/\D/g, '');
-      whatsapp_link = `https://wa.me/57${clean}?text=Factura:%20${invoice_url}`;
-    }
-
-    /* =========================
-       ENVÍO TWILIO
-    ========================= */
-    if (client && client_phone) {
-      try {
-        await client.messages.create({
-          from: 'whatsapp:+14155238886',
-          to: `whatsapp:+57${client_phone.replace(/\D/g, '')}`,
-          body: `🧾 Factura: ${invoice_url}`,
-          mediaUrl: [invoice_url]
-        });
-
-        console.log("✅ WhatsApp enviado");
-
-      } catch (err) {
-        console.error("❌ Error WhatsApp:", err.message);
-      }
-    }
-
-    res.status(201).json({
-      sale_id: sale.id,
+    const sale = {
+      id: currentId++,
+      clienteTelefono,
+      items,
       total,
-      invoice_url,
-      whatsapp_link
-    });
+      date: new Date()
+    };
 
-  } catch (error) {
-    console.error("❌ ERROR SALE:", error);
-    res.status(500).json({ error: 'Error en la venta' });
-  }
-});
+    sales.push(sale);
 
-/* =========================
-   PDF (🔥 CON IVA)
-========================= */
-app.get('/sales/:id/pdf', async (req, res) => {
-  try {
-    const saleId = req.params.id;
+    // Enviar WhatsApp automáticamente
+    if (clienteTelefono) {
+      await enviarWhatsApp(clienteTelefono, sale.id);
+    }
 
-    const itemsRes = await pool.query(`
-      SELECT p.name, si.quantity, si.price
-      FROM sale_items si
-      JOIN products p ON p.id = si.product_id
-      WHERE si.sale_id = $1
-    `, [saleId]);
-
-    const doc = new PDFDocument({
-      margin: 5,
-      size: [200, 600]
-    });
-
-    res.setHeader('Content-Type', 'application/pdf');
-    doc.pipe(res);
-
-    doc.text(`Factura #${saleId}`, { align: 'center' });
-
-    let subtotalCalc = 0;
-
-    itemsRes.rows.forEach(item => {
-      const sub = item.price * item.quantity;
-      subtotalCalc += sub;
-
-      doc.text(`${item.name}`);
-      doc.text(`${item.quantity} x ${item.price}`);
-      doc.text(`$${sub}`);
-      doc.moveDown();
-    });
-
-    const IVA = 0.19;
-    const ivaCalc = subtotalCalc * IVA;
-    const totalCalc = subtotalCalc + ivaCalc;
-
-    doc.moveDown();
-    doc.text(`Subtotal: $${subtotalCalc.toFixed(2)}`);
-    doc.text(`IVA (19%): $${ivaCalc.toFixed(2)}`);
-    doc.text(`TOTAL: $${totalCalc.toFixed(2)}`, { align: 'center' });
-
-    doc.end();
-
+    res.json(sale);
   } catch (error) {
     console.error(error);
-    res.status(500).send("Error PDF");
+    res.status(500).json({ error: 'Error creando venta' });
   }
 });
 
-/* =========================
-   START
-========================= */
+// =========================
+// GENERAR PDF
+// =========================
+app.get('/sales/:id/pdf', (req, res) => {
+  const sale = sales.find(s => s.id == req.params.id);
+
+  if (!sale) {
+    return res.status(404).send('Venta no encontrada');
+  }
+
+  const doc = new PDFDocument();
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename=factura-${sale.id}.pdf`);
+
+  doc.pipe(res);
+
+  doc.fontSize(20).text('Factura POS', { align: 'center' });
+  doc.moveDown();
+
+  doc.text(`ID: ${sale.id}`);
+  doc.text(`Fecha: ${sale.date}`);
+  doc.moveDown();
+
+  doc.text('Productos:');
+  sale.items.forEach(item => {
+    doc.text(`- ${item.nombre} x${item.cantidad} = $${item.precio}`);
+  });
+
+  doc.moveDown();
+  doc.text(`Total: $${sale.total}`);
+
+  doc.end();
+});
+
+// =========================
+// FUNCIÓN TWILIO
+// =========================
+async function enviarWhatsApp(numero, saleId) {
+  const pdfUrl = `https://pos-backend-73yp.onrender.com/sales/${saleId}/pdf`;
+
+  try {
+    await client.messages.create({
+      from: 'whatsapp:+14155238886',
+      to: `whatsapp:${numero}`,
+      body: `🧾 Tu factura está lista:\n${pdfUrl}`
+    });
+
+    console.log('✅ WhatsApp enviado');
+  } catch (error) {
+    console.error('❌ Error enviando WhatsApp:', error.message);
+  }
+}
+
+// =========================
+// SERVER
+// =========================
+const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor en puerto ${PORT}`);
+  console.log(`Servidor corriendo en puerto ${PORT}`);
 });
