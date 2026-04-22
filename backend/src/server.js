@@ -12,19 +12,23 @@ import path from "path";
 dotenv.config();
 
 /* =========================
-   CONFIG & CORS
+   CONFIG
 ========================= */
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 
-// Configuración de CORS corregida para producción
+/* =========================
+   CONFIGURACIÓN DE CORS (CRÍTICO)
+   Debe ir ANTES de cualquier ruta
+========================= */
 app.use(cors({
   origin: [
-    'http://localhost:5173', 
-    'https://smart-pos-f-perez.web.app' // Tu URL de Firebase
+    'https://smart-pos-f-perez.web.app', // Tu URL de Firebase
+    'http://localhost:5173'              // Desarrollo local
   ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
 
@@ -38,7 +42,7 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
   client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
   console.log("✅ Twilio listo");
 } else {
-  console.log("⚠️ Twilio no configurado (revisa variables de entorno)");
+  console.log("⚠️ Twilio no configurado");
 }
 
 /* =========================
@@ -104,11 +108,10 @@ app.post('/sales', async (req, res) => {
       if (client) {
         try {
           await client.messages.create({
-            from: 'whatsapp:+14155238886', // Sandbox de Twilio
+            from: 'whatsapp:+14155238886', 
             to: `whatsapp:+57${clean}`,
             body: `🧾 Tu factura de POS PRO:\n${invoice_url}`
           });
-          console.log("✅ WhatsApp enviado");
         } catch (err) {
           console.error("❌ Error Twilio:", err.message);
         }
@@ -163,6 +166,5 @@ app.get('/sales/:id/pdf', async (req, res) => {
    START SERVER
 ========================= */
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-  console.log(`🌍 URL Base: ${BASE_URL}`);
+  console.log(`🚀 Servidor en puerto ${PORT}`);
 });
