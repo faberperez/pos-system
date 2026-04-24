@@ -153,8 +153,7 @@ app.get('/sales/:id/pdf', async (req, res) => {
     doc.pipe(res);
 
     // 🔥 MARCADOR PARA SABER QUE ES EL NUEVO
-    doc.text("🔥 VERSION NUEVA RENDER 🔥", { align: 'center' });
-
+    
     doc.moveDown();
     doc.fontSize(12).text('POS PRO - FACTURA', { align: 'center' });
     doc.text(`Ticket #${saleId}`, { align: 'center' });
