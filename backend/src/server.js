@@ -112,10 +112,16 @@ app.post('/sales', async (req, res) => {
       invoice_url
     });
 
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error en la venta' });
-  }
+  }catch (error) {
+  console.log("🔥🔥 ERROR REAL EN /sales:");
+  console.log(error);
+  console.log("STACK:", error?.stack);
+
+  return res.status(500).json({
+    message: error.message,
+    stack: error?.stack
+  });
+}
 });
 
 /* =========================
