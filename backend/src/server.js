@@ -37,12 +37,16 @@ app.get('/products', async (req, res) => {
 });
 
 /* =========================
-   SALES (FIX DEFINITIVO)
+   SALES
 ========================= */
 app.post('/sales', async (req, res) => {
-  console.log("🔥 BODY SALES:", JSON.stringify(req.body, null, 2));
+
+  // 🔥 LOGS CLAVE (AQUÍ ESTÁ LA VERDAD)
+  console.log("🌍 URL:", req.originalUrl);
+  console.log("📦 BODY COMPLETO:", JSON.stringify(req.body, null, 2));
 
   try {
+
     const {
       items = [],
       client_phone,
@@ -53,14 +57,22 @@ app.post('/sales', async (req, res) => {
     } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
+      console.log("❌ CARRITO VACÍO");
       return res.status(400).json({ error: "Carrito vacío o inválido" });
     }
 
-    /* =========================
-       FECHA SEGURA (ISO 8601)
-    ========================= */
+    // 🔥 FECHA FORZADA (NO DEPENDE DEL FRONTEND)
     const fecha_hora = new Date().toISOString();
-    console.log("FECHA QUE SE ENVIA A BD:", fecha_hora);
+
+    console.log("🕒 FECHA GENERADA:", fecha_hora);
+
+    console.log("🚨 DATOS QUE SE INSERTAN:", {
+      subtotal,
+      total,
+      efectivo,
+      cambio,
+      client_phone
+    });
 
     /* =========================
        INSERT SALE
@@ -82,10 +94,15 @@ app.post('/sales', async (req, res) => {
 
     const sale = saleResult.rows[0];
 
+    console.log("✅ VENTA CREADA:", sale.id);
+
     /* =========================
        INSERT ITEMS
     ========================= */
     for (const item of items) {
+
+      console.log("🧾 ITEM:", item);
+
       const product_id = Number(item.product_id);
       const quantity = Number(item.quantity);
       const price = Number(item.price);
@@ -114,9 +131,13 @@ app.post('/sales', async (req, res) => {
     });
 
   } catch (error) {
-    console.log("🔥 ERROR REAL EN /sales:");
-    console.log(error);
-    console.log(error?.stack);
+
+    // 🔥 ESTE LOG NOS VA A DECIR TODO
+    console.log("🔥🔥 ERROR REAL EN /sales 🔥🔥");
+    console.log("MESSAGE:", error.message);
+    console.log("CODE:", error.code);
+    console.log("DETAIL:", error.detail);
+    console.log("STACK:", error.stack);
 
     return res.status(500).json({
       error: error.message
