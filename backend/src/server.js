@@ -1,4 +1,4 @@
-console.log("🔥 VERSION FINAL SIN ERROR DE FECHA 🔥");
+console.log("🔥 VERSION FINAL CORREGIDA 🔥");
 
 import express from 'express';
 import cors from 'cors';
@@ -41,29 +41,38 @@ app.get('/products', async (req, res) => {
 ========================= */
 app.post('/sales', async (req, res) => {
 
-  // 🔥 LOGS CLAVE (AQUÍ ESTÁ LA VERDAD)
   console.log("🌍 URL:", req.originalUrl);
   console.log("📦 BODY COMPLETO:", JSON.stringify(req.body, null, 2));
 
   try {
     const {
-  items = [],
-  client_phone,
-  total = 0,
-  subtotal = 0,
-  pago_con = 0,   // 🔥 ESTE ES EL QUE VIENE DEL FRONT
-  cambio = 0
-} = req.body;
+      items = [],
+      client_phone,
+      total = 0,
+      subtotal = 0,
+      pago_con = 0,
+      cambio = 0
+    } = req.body;
 
-
+    // 🔥 FIX REAL DEL EFECTIVO
+    const efectivo = Number(pago_con) || 0;
 
     if (!Array.isArray(items) || items.length === 0) {
       console.log("❌ CARRITO VACÍO");
       return res.status(400).json({ error: "Carrito vacío o inválido" });
     }
 
-    // 🔥 FECHA FORZADA (NO DEPENDE DEL FRONTEND)
-    const fecha_hora = new Date().toISOString();
+    // 🔥 FECHA BONITA (COLOMBIA)
+    const now = new Date();
+    const fecha_hora = now.toLocaleString('es-CO', {
+      timeZone: 'America/Bogota',
+      hour12: true,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
 
     console.log("🕒 FECHA GENERADA:", fecha_hora);
 
@@ -86,7 +95,7 @@ app.post('/sales', async (req, res) => {
       [
         Number(subtotal),
         Number(total),
-        Number(efectivo),
+        efectivo,
         Number(cambio),
         client_phone || null,
         fecha_hora
@@ -101,8 +110,6 @@ app.post('/sales', async (req, res) => {
        INSERT ITEMS
     ========================= */
     for (const item of items) {
-
-      console.log("🧾 ITEM:", item);
 
       const product_id = Number(item.product_id);
       const quantity = Number(item.quantity);
@@ -133,11 +140,8 @@ app.post('/sales', async (req, res) => {
 
   } catch (error) {
 
-    // 🔥 ESTE LOG NOS VA A DECIR TODO
     console.log("🔥🔥 ERROR REAL EN /sales 🔥🔥");
     console.log("MESSAGE:", error.message);
-    console.log("CODE:", error.code);
-    console.log("DETAIL:", error.detail);
     console.log("STACK:", error.stack);
 
     return res.status(500).json({
@@ -178,7 +182,9 @@ app.get('/sales/:id/pdf', async (req, res) => {
 
     doc.fontSize(12).text('POS PRO - FACTURA', { align: 'center' });
     doc.text(`Ticket #${saleId}`, { align: 'center' });
-    doc.text(`Fecha: ${sale.fecha_hora || ''}`, { align: 'center' });
+
+    // 🔥 YA VIENE LIMPIA DESDE DB
+    doc.text(`Fecha: ${sale.fecha_hora}`, { align: 'center' });
 
     doc.moveDown();
 
