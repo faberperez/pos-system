@@ -1,4 +1,4 @@
-console.log("🔥 VERSION FINAL PRO POS 🔥");
+console.log("🔥 POS PRO FINAL PROFESIONAL 🔥");
 
 import express from 'express';
 import cors from 'cors';
@@ -156,8 +156,8 @@ app.get('/sales/:id/pdf', async (req, res) => {
 
     doc.font('Courier');
 
-    // 🏪 HEADER
-    doc.fontSize(14).text('POS PRO 🚀', { align: 'center' });
+    // HEADER
+    doc.fontSize(14).text('POS PRO', { align: 'center' });
     doc.fontSize(8).text('Pereira - Risaralda', { align: 'center' });
     doc.text('NIT: 123456789-0', { align: 'center' });
 
@@ -168,21 +168,23 @@ app.get('/sales/:id/pdf', async (req, res) => {
     doc.moveDown();
     doc.text('--------------------------------');
 
-    // 🛒 ITEMS
+    // ITEMS ALINEADOS PRO
     itemsRes.rows.forEach(item => {
       const name = item.name.substring(0, 18);
-      const totalItem = item.price * item.quantity;
+      const left = `${item.quantity}x ${name}`;
+      const right = money(item.price * item.quantity);
 
-      doc.fontSize(10)
-        .text(`${item.quantity}x ${name}`, { continued: true })
-        .text(money(totalItem), { align: 'right' });
+      const space = 40 - left.length - right.length;
+      const line = left + ' '.repeat(space > 0 ? space : 1) + right;
+
+      doc.text(line);
     });
 
     doc.moveDown();
     doc.text('--------------------------------');
 
-    // 💰 TOTALS
-    doc.fontSize(10).text(`SUBTOTAL: ${money(sale.subtotal)}`);
+    // TOTALES
+    doc.text(`SUBTOTAL: ${money(sale.subtotal)}`);
     doc.fontSize(12).text(`TOTAL: ${money(sale.total)}`, { align: 'center' });
 
     doc.moveDown(0.5);
@@ -192,12 +194,12 @@ app.get('/sales/:id/pdf', async (req, res) => {
     doc.moveDown();
     doc.text('--------------------------------');
 
-    // ❤️ FOOTER
+    // FOOTER
     doc.moveDown(0.5);
-    doc.fontSize(9).text('¡Gracias por su compra!', { align: 'center' });
-    doc.text('Vuelva pronto 😊', { align: 'center' });
+    doc.fontSize(9).text('Gracias por su compra', { align: 'center' });
+    doc.text('Vuelva pronto', { align: 'center' });
 
-    // 🔳 QR
+    // QR
     try {
       const qrData = `${BASE_URL}/sales/${saleId}/pdf`;
       const qrImage = await QRCode.toDataURL(qrData);
