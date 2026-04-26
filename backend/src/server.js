@@ -46,15 +46,16 @@ app.post('/sales', async (req, res) => {
   console.log("📦 BODY COMPLETO:", JSON.stringify(req.body, null, 2));
 
   try {
-
     const {
-      items = [],
-      client_phone,
-      total = 0,
-      subtotal = 0,
-      efectivo = 0,
-      cambio = 0
-    } = req.body;
+  items = [],
+  client_phone,
+  total = 0,
+  subtotal = 0,
+  pago_con = 0,   // 🔥 ESTE ES EL QUE VIENE DEL FRONT
+  cambio = 0
+} = req.body;
+
+
 
     if (!Array.isArray(items) || items.length === 0) {
       console.log("❌ CARRITO VACÍO");
