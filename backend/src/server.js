@@ -1,10 +1,11 @@
-console.log("🔥 VERSION ESTABLE CON FECHA CORRECTA 🔥");
+console.log("🔥 VERSION FINAL PRO POS 🔥");
 
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pool from './config/db.js';
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 
 dotenv.config();
 
@@ -53,14 +54,12 @@ app.post('/sales', async (req, res) => {
       cambio = 0
     } = req.body;
 
-    // ✅ EFECTIVO CORREGIDO
     const efectivo = Number(pago_con) || 0;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Carrito vacío" });
     }
 
-    // ✅ FECHA CORRECTA PARA BASE DE DATOS
     const fecha_hora = new Date().toISOString();
 
     const saleResult = await pool.query(
@@ -108,7 +107,7 @@ app.post('/sales', async (req, res) => {
     });
 
   } catch (error) {
-    console.log("🔥 ERROR /sales:", error.message);
+    console.error("🔥 ERROR /sales:", error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -138,16 +137,14 @@ app.get('/sales/:id/pdf', async (req, res) => {
       WHERE si.sale_id = $1
     `, [saleId]);
 
-    const doc = new PDFDocument({ margin: 10, size: [200, 400] });
+    const doc = new PDFDocument({ margin: 10, size: [220, 500] });
 
     res.setHeader('Content-Type', 'application/pdf');
     doc.pipe(res);
 
-    doc.fontSize(12).text('POS PRO - FACTURA', { align: 'center' });
-    doc.text(`Ticket #${saleId}`, { align: 'center' });
+    const money = (v) => `$${Number(v).toLocaleString('es-CO')}`;
 
-    // ✅ AQUÍ SE ARREGLA LA FECHA (SIN GMT NI TEXTO FEO)
-    const fechaBonita = new Date(sale.fecha_hora).toLocaleString('es-CO', {
+    const fecha = new Date(sale.fecha_hora).toLocaleString('es-CO', {
       timeZone: 'America/Bogota',
       hour12: true,
       year: 'numeric',
@@ -157,24 +154,61 @@ app.get('/sales/:id/pdf', async (req, res) => {
       minute: '2-digit'
     });
 
-    doc.text(`Fecha: ${fechaBonita}`, { align: 'center' });
+    doc.font('Courier');
+
+    // 🏪 HEADER
+    doc.fontSize(14).text('POS PRO 🚀', { align: 'center' });
+    doc.fontSize(8).text('Pereira - Risaralda', { align: 'center' });
+    doc.text('NIT: 123456789-0', { align: 'center' });
+
+    doc.moveDown(0.5);
+    doc.text(`Ticket #${saleId}`, { align: 'center' });
+    doc.text(`Fecha: ${fecha}`, { align: 'center' });
 
     doc.moveDown();
+    doc.text('--------------------------------');
 
+    // 🛒 ITEMS
     itemsRes.rows.forEach(item => {
-      const sub = Number(item.price) * Number(item.quantity);
-      doc.text(`${item.name} x${item.quantity} - $${sub.toFixed(0)}`);
+      const name = item.name.substring(0, 18);
+      const totalItem = item.price * item.quantity;
+
+      doc.fontSize(10)
+        .text(`${item.quantity}x ${name}`, { continued: true })
+        .text(money(totalItem), { align: 'right' });
     });
 
     doc.moveDown();
+    doc.text('--------------------------------');
 
-    doc.text(`SUBTOTAL: $${Number(sale.subtotal || 0).toFixed(0)}`);
-    doc.text(`TOTAL: $${Number(sale.total || 0).toFixed(0)}`, {
-      align: 'center'
-    });
+    // 💰 TOTALS
+    doc.fontSize(10).text(`SUBTOTAL: ${money(sale.subtotal)}`);
+    doc.fontSize(12).text(`TOTAL: ${money(sale.total)}`, { align: 'center' });
 
-    doc.text(`EFECTIVO: $${Number(sale.efectivo || 0).toFixed(0)}`);
-    doc.text(`CAMBIO: $${Number(sale.cambio || 0).toFixed(0)}`);
+    doc.moveDown(0.5);
+    doc.fontSize(10).text(`EFECTIVO: ${money(sale.efectivo)}`);
+    doc.text(`CAMBIO: ${money(sale.cambio)}`);
+
+    doc.moveDown();
+    doc.text('--------------------------------');
+
+    // ❤️ FOOTER
+    doc.moveDown(0.5);
+    doc.fontSize(9).text('¡Gracias por su compra!', { align: 'center' });
+    doc.text('Vuelva pronto 😊', { align: 'center' });
+
+    // 🔳 QR
+    try {
+      const qrData = `${BASE_URL}/sales/${saleId}/pdf`;
+      const qrImage = await QRCode.toDataURL(qrData);
+
+      doc.image(qrImage, {
+        fit: [80, 80],
+        align: 'center'
+      });
+    } catch (e) {
+      console.log("QR ERROR:", e.message);
+    }
 
     doc.end();
 
