@@ -1,11 +1,10 @@
-console.log("🔥 ARCHIVO CORRECTO EJECUTÁNDOSE 🔥");
+console.log("🔥 VERSION FINAL SIN ERROR DE FECHA 🔥");
 
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pool from './config/db.js';
 import PDFDocument from 'pdfkit';
-import twilio from 'twilio';
 
 dotenv.config();
 
@@ -25,14 +24,6 @@ app.use(cors({
 app.use(express.json());
 
 /* =========================
-   TWILIO (opcional)
-========================= */
-let client = null;
-if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-  client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-}
-
-/* =========================
    PRODUCTS
 ========================= */
 app.get('/products', async (req, res) => {
@@ -46,10 +37,10 @@ app.get('/products', async (req, res) => {
 });
 
 /* =========================
-   SALES (ESTABLE)
+   SALES (FIX DEFINITIVO)
 ========================= */
 app.post('/sales', async (req, res) => {
-  console.log("🔥 ENTRA /sales");
+  console.log("🔥 BODY SALES:", JSON.stringify(req.body, null, 2));
 
   try {
     const {
@@ -57,51 +48,39 @@ app.post('/sales', async (req, res) => {
       client_phone,
       total = 0,
       subtotal = 0,
-      iva = 0,
-      pago_con = 0,
-      cambio = 0,
-      fecha,
-      hora
+      efectivo = 0,
+      cambio = 0
     } = req.body;
-
-    console.log("🔥 SALES DATA:", {
-      total,
-      subtotal,
-      iva,
-      pago_con,
-      cambio,
-      fecha,
-      hora,
-      itemsLength: items.length
-    });
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Carrito vacío o inválido" });
     }
 
     /* =========================
-       INSERT SALES
+       FECHA SEGURA (ISO 8601)
+    ========================= */
+    const fecha_hora = new Date().toISOString();
+    console.log("FECHA QUE SE ENVIA A BD:", fecha_hora);
+
+    /* =========================
+       INSERT SALE
     ========================= */
     const saleResult = await pool.query(
       `INSERT INTO sales 
-      (total, client_phone, subtotal, iva, efectivo, cambio, fecha_hora) 
-      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      (subtotal, total, efectivo, cambio, client_phone, fecha_hora)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      RETURNING *`,
       [
-        Number(total || 0),
+        Number(subtotal),
+        Number(total),
+        Number(efectivo),
+        Number(cambio),
         client_phone || null,
-        Number(subtotal || 0),
-        Number(iva || 0),
-        Number(pago_con || 0),
-        Number(cambio || 0),
-        `${fecha || ''} ${hora || ''}`
+        fecha_hora
       ]
     );
 
     const sale = saleResult.rows[0];
-
-    if (!sale) {
-      return res.status(500).json({ error: "No se pudo crear la venta" });
-    }
 
     /* =========================
        INSERT ITEMS
@@ -117,16 +96,13 @@ app.post('/sales', async (req, res) => {
       }
 
       await pool.query(
-        `INSERT INTO sale_items 
-        (sale_id, product_id, quantity, price) 
-        VALUES ($1,$2,$3,$4)`,
+        `INSERT INTO sale_items (sale_id, product_id, quantity, price)
+         VALUES ($1,$2,$3,$4)`,
         [sale.id, product_id, quantity, price]
       );
 
       await pool.query(
-        `UPDATE products 
-        SET stock = COALESCE(stock,0) - $1 
-        WHERE id = $2`,
+        `UPDATE products SET stock = COALESCE(stock,0) - $1 WHERE id = $2`,
         [quantity, product_id]
       );
     }
@@ -149,7 +125,7 @@ app.post('/sales', async (req, res) => {
 });
 
 /* =========================
-   PDF (CLEAN)
+   PDF
 ========================= */
 app.get('/sales/:id/pdf', async (req, res) => {
   try {
@@ -185,18 +161,19 @@ app.get('/sales/:id/pdf', async (req, res) => {
     doc.moveDown();
 
     itemsRes.rows.forEach(item => {
-      const quantity = Number(item.quantity || 0);
-      const price = Number(item.price || 0);
-      const sub = quantity * price;
-
-      doc.text(`${item.name} x${quantity} - $${sub.toFixed(2)}`);
+      const sub = Number(item.price) * Number(item.quantity);
+      doc.text(`${item.name} x${item.quantity} - $${sub.toFixed(2)}`);
     });
 
     doc.moveDown();
 
+    doc.text(`SUBTOTAL: $${Number(sale.subtotal || 0).toFixed(2)}`);
     doc.text(`TOTAL: $${Number(sale.total || 0).toFixed(2)}`, {
       align: 'center'
     });
+
+    doc.text(`EFECTIVO: $${Number(sale.efectivo || 0).toFixed(2)}`);
+    doc.text(`CAMBIO: $${Number(sale.cambio || 0).toFixed(2)}`);
 
     doc.end();
 
