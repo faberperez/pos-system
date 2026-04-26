@@ -1,4 +1,4 @@
-console.log("🔥 VERSION FINAL CORREGIDA 🔥");
+console.log("🔥 VERSION ESTABLE CON FECHA CORRECTA 🔥");
 
 import express from 'express';
 import cors from 'cors';
@@ -41,8 +41,7 @@ app.get('/products', async (req, res) => {
 ========================= */
 app.post('/sales', async (req, res) => {
 
-  console.log("🌍 URL:", req.originalUrl);
-  console.log("📦 BODY COMPLETO:", JSON.stringify(req.body, null, 2));
+  console.log("📦 BODY:", JSON.stringify(req.body, null, 2));
 
   try {
     const {
@@ -54,39 +53,16 @@ app.post('/sales', async (req, res) => {
       cambio = 0
     } = req.body;
 
-    // 🔥 FIX REAL DEL EFECTIVO
+    // ✅ EFECTIVO CORREGIDO
     const efectivo = Number(pago_con) || 0;
 
     if (!Array.isArray(items) || items.length === 0) {
-      console.log("❌ CARRITO VACÍO");
-      return res.status(400).json({ error: "Carrito vacío o inválido" });
+      return res.status(400).json({ error: "Carrito vacío" });
     }
 
-    // 🔥 FECHA BONITA (COLOMBIA)
-    const now = new Date();
-    const fecha_hora = now.toLocaleString('es-CO', {
-      timeZone: 'America/Bogota',
-      hour12: true,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    // ✅ FECHA CORRECTA PARA BASE DE DATOS
+    const fecha_hora = new Date().toISOString();
 
-    console.log("🕒 FECHA GENERADA:", fecha_hora);
-
-    console.log("🚨 DATOS QUE SE INSERTAN:", {
-      subtotal,
-      total,
-      efectivo,
-      cambio,
-      client_phone
-    });
-
-    /* =========================
-       INSERT SALE
-    ========================= */
     const saleResult = await pool.query(
       `INSERT INTO sales 
       (subtotal, total, efectivo, cambio, client_phone, fecha_hora)
@@ -104,21 +80,12 @@ app.post('/sales', async (req, res) => {
 
     const sale = saleResult.rows[0];
 
-    console.log("✅ VENTA CREADA:", sale.id);
-
-    /* =========================
-       INSERT ITEMS
-    ========================= */
     for (const item of items) {
-
       const product_id = Number(item.product_id);
       const quantity = Number(item.quantity);
       const price = Number(item.price);
 
-      if (!product_id || !quantity || !price) {
-        console.log("⚠️ ITEM INVALIDO:", item);
-        continue;
-      }
+      if (!product_id || !quantity || !price) continue;
 
       await pool.query(
         `INSERT INTO sale_items (sale_id, product_id, quantity, price)
@@ -127,7 +94,9 @@ app.post('/sales', async (req, res) => {
       );
 
       await pool.query(
-        `UPDATE products SET stock = COALESCE(stock,0) - $1 WHERE id = $2`,
+        `UPDATE products 
+         SET stock = COALESCE(stock,0) - $1 
+         WHERE id = $2`,
         [quantity, product_id]
       );
     }
@@ -139,14 +108,8 @@ app.post('/sales', async (req, res) => {
     });
 
   } catch (error) {
-
-    console.log("🔥🔥 ERROR REAL EN /sales 🔥🔥");
-    console.log("MESSAGE:", error.message);
-    console.log("STACK:", error.stack);
-
-    return res.status(500).json({
-      error: error.message
-    });
+    console.log("🔥 ERROR /sales:", error.message);
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -183,25 +146,35 @@ app.get('/sales/:id/pdf', async (req, res) => {
     doc.fontSize(12).text('POS PRO - FACTURA', { align: 'center' });
     doc.text(`Ticket #${saleId}`, { align: 'center' });
 
-    // 🔥 YA VIENE LIMPIA DESDE DB
-    doc.text(`Fecha: ${sale.fecha_hora}`, { align: 'center' });
+    // ✅ AQUÍ SE ARREGLA LA FECHA (SIN GMT NI TEXTO FEO)
+    const fechaBonita = new Date(sale.fecha_hora).toLocaleString('es-CO', {
+      timeZone: 'America/Bogota',
+      hour12: true,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    doc.text(`Fecha: ${fechaBonita}`, { align: 'center' });
 
     doc.moveDown();
 
     itemsRes.rows.forEach(item => {
       const sub = Number(item.price) * Number(item.quantity);
-      doc.text(`${item.name} x${item.quantity} - $${sub.toFixed(2)}`);
+      doc.text(`${item.name} x${item.quantity} - $${sub.toFixed(0)}`);
     });
 
     doc.moveDown();
 
-    doc.text(`SUBTOTAL: $${Number(sale.subtotal || 0).toFixed(2)}`);
-    doc.text(`TOTAL: $${Number(sale.total || 0).toFixed(2)}`, {
+    doc.text(`SUBTOTAL: $${Number(sale.subtotal || 0).toFixed(0)}`);
+    doc.text(`TOTAL: $${Number(sale.total || 0).toFixed(0)}`, {
       align: 'center'
     });
 
-    doc.text(`EFECTIVO: $${Number(sale.efectivo || 0).toFixed(2)}`);
-    doc.text(`CAMBIO: $${Number(sale.cambio || 0).toFixed(2)}`);
+    doc.text(`EFECTIVO: $${Number(sale.efectivo || 0).toFixed(0)}`);
+    doc.text(`CAMBIO: $${Number(sale.cambio || 0).toFixed(0)}`);
 
     doc.end();
 
