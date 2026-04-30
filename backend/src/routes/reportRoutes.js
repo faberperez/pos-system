@@ -1,15 +1,19 @@
+
+
 import express from 'express';
-import { getReport, getReportDetails, getPdfReport } from '../controllers/reportController.js';
+// 1. Eliminamos 'getReportDetails' del import
+import { getReport, getPdfReport } from '../controllers/reportController.js';
 
 const router = express.Router();
 
-// ✅ RESUMEN
+// 2. Esta ruta ahora devuelve TODO (Resumen + Detalle)
 router.get('/', getReport);
 
-// ✅ DETALLE (ANTES era /books ❌)
-router.get('/details', getReportDetails);
+// 3. Eliminamos la ruta '/details' porque ya no existe
+// router.get('/details', getReportDetails); ❌ BORRAR ESTA LÍNEA
 
-// ✅ PDF
+// 4. Ruta para el PDF
 router.get('/pdf', getPdfReport);
 
 export default router;
+
