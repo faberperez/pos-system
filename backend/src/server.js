@@ -222,6 +222,31 @@ app.get("/sales/:id/pdf", async (req, res) => {
 });
 
 // ======================
+
+// ======================
+// 🔥 RUTA DE DEBUG (PEGA ESTO AQUÍ)
+// ======================
+app.get("/debug-connection", async (req, res) => {
+  try {
+    const identity = await pool.query('SELECT current_database() as db, current_user as user');
+    const columns = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'sale_items';
+    `);
+
+    res.json({
+      info: identity.rows[0],
+      columnas_detectadas: columns.rows.map(c => c.column_name)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ======================
+
+
 app.listen(PORT, () => {
   console.log(`🔥 SERVER RUNNING ON PORT ${PORT}`);
 });
