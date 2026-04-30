@@ -78,8 +78,10 @@ const cleanPrice = (value) => {
   ) || 0;
 };
 
+
+
 // ======================
-// 🔥 SALES + WHATSAPP
+// 🔥 SALES + WHATSAPP (CÓDIGO CORREGIDO)
 // ======================
 app.post("/sales", async (req, res) => {
   const client = await pool.connect();
@@ -100,6 +102,7 @@ app.post("/sales", async (req, res) => {
     const iva = subtotal * 0.19;
     const total = subtotal + iva;
 
+    // Insertar en la tabla de ventas
     const saleResult = await client.query(
       `INSERT INTO sales (
         total, subtotal, iva, efectivo, cambio, fecha_hora, client_phone
@@ -111,9 +114,10 @@ app.post("/sales", async (req, res) => {
 
     const sale = saleResult.rows[0];
 
+    // Insertar los items en la tabla usando el esquema public explícito
     for (const item of items) {
       await client.query(
-        `INSERT INTO sale_items (sale_id, product_id, quantity, price, name)
+        `INSERT INTO public.sale_items (sale_id, product_id, quantity, price, name)
          VALUES ($1, $2, $3, $4, $5)`,
         [
           sale.id,
@@ -162,6 +166,8 @@ app.post("/sales", async (req, res) => {
     client.release();
   }
 });
+
+
 
 // ======================
 // 🔥 PDF FACTURA
@@ -222,6 +228,7 @@ app.get("/sales/:id/pdf", async (req, res) => {
 });
 
 // ======================
+
 
 // ======================
 // 🔥 RUTA DE DEBUG (PEGA ESTO AQUÍ)
