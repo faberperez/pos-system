@@ -13,7 +13,7 @@ router.get('/', getReport);
 // router.get('/details', getReportDetails); ❌ BORRAR ESTA LÍNEA
 
 // 4. Ruta para el PDF
-router.get('/pdf', getPdfReport);
 
+router.get('/download', getPdfReport);
 export default router;
 
