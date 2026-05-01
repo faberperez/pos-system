@@ -44,6 +44,7 @@ app.use('/api/reports', reportRoutes);
 
 // --- RUTAS DE PRODUCTOS ---
 
+// Obtener todos
 app.get("/products", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM products ORDER BY id ASC");
@@ -53,29 +54,34 @@ app.get("/products", async (req, res) => {
   }
 });
 
-// NUEVO: Ruta para CREAR producto
+// CREAR producto (Corregido con barcode e image)
 app.post("/products", async (req, res) => {
   try {
-    const { name, price, stock, image_url } = req.body;
+    const { name, price, stock, barcode, image } = req.body;
+    
     const result = await pool.query(
-      "INSERT INTO products (name, price, stock, image_url) VALUES ($1, $2, $3, $4) RETURNING *",
-      [name, price, stock, image_url]
+      "INSERT INTO products (name, price, stock, barcode, image) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [name, price, stock, barcode, image]
     );
+    
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    console.error("Error al guardar producto:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// NUEVO: Ruta para EDITAR producto
+// EDITAR producto (Corregido con barcode e image)
 app.put("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, price, stock, image_url } = req.body;
+    const { name, price, stock, barcode, image } = req.body;
+    
     const result = await pool.query(
-      "UPDATE products SET name = $1, price = $2, stock = $3, image_url = $4 WHERE id = $5 RETURNING *",
-      [name, price, stock, image_url, id]
+      "UPDATE products SET name = $1, price = $2, stock = $3, barcode = $4, image = $5 WHERE id = $6 RETURNING *",
+      [name, price, stock, barcode, image, id]
     );
+    
     if (result.rowCount === 0) return res.status(404).json({ error: "Producto no encontrado" });
     res.json(result.rows[0]);
   } catch (err) {
