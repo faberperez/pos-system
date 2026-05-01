@@ -4,8 +4,9 @@ import dotenv from "dotenv";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
 import twilio from "twilio";
+import bwipjs from "bwip-js"; // Importación añadida
 
-// Tus importaciones
+// Tus archivos locales
 import pool from './config/db.js';
 import reportRoutes from './routes/reportRoutes.js';
 
@@ -23,7 +24,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// Limpieza de precio
+// Helper para limpiar precios
 const cleanPrice = (value) => {
   return Number(
     String(value ?? 0)
@@ -34,17 +35,15 @@ const cleanPrice = (value) => {
   ) || 0;
 };
 
-// Ruta principal
+// --- RUTAS ---
+
 app.get("/", (req, res) => {
   res.json({ ok: true, message: "POS PRO funcionando 🚀" });
 });
 
-// Rutas existentes
 app.use('/api/reports', reportRoutes);
 
-// --- RUTAS DE PRODUCTOS ---
-
-// Obtener todos
+// --- PRODUCTOS ---
 app.get("/products", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM products ORDER BY id ASC");
@@ -54,34 +53,27 @@ app.get("/products", async (req, res) => {
   }
 });
 
-// CREAR producto (Corregido con barcode e image)
 app.post("/products", async (req, res) => {
   try {
     const { name, price, stock, barcode, image } = req.body;
-    
     const result = await pool.query(
       "INSERT INTO products (name, price, stock, barcode, image) VALUES ($1, $2, $3, $4, $5) RETURNING *",
       [name, price, stock, barcode, image]
     );
-    
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error("Error al guardar producto:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// EDITAR producto (Corregido con barcode e image)
 app.put("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { name, price, stock, barcode, image } = req.body;
-    
     const result = await pool.query(
       "UPDATE products SET name = $1, price = $2, stock = $3, barcode = $4, image = $5 WHERE id = $6 RETURNING *",
       [name, price, stock, barcode, image, id]
     );
-    
     if (result.rowCount === 0) return res.status(404).json({ error: "Producto no encontrado" });
     res.json(result.rows[0]);
   } catch (err) {
@@ -89,18 +81,7 @@ app.put("/products/:id", async (req, res) => {
   }
 });
 
-// --- FIN RUTAS DE PRODUCTOS ---
-
-app.get("/barcode/:code", async (req, res) => {
-  try {
-    const qr = await QRCode.toDataURL(req.params.code);
-    res.json({ qr });
-  } catch (err) {
-    res.status(500).json({ error: "Error generando QR" });
-  }
-});
-
-// Ruta Ventas
+// --- VENTAS ---
 app.post("/sales", async (req, res) => {
   const client = await pool.connect();
   try {
@@ -152,33 +133,78 @@ app.post("/sales", async (req, res) => {
   }
 });
 
-// Ruta PDF
+// --- RUTA PDF PROFESIONAL (OXXO STYLE) ---
 app.get("/sales/:id/pdf", async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query(`SELECT quantity, price, name FROM sale_items WHERE sale_id = $1`, [id]);
-    const doc = new PDFDocument({ size: "A7", margin: 10 });
+    const saleResult = await pool.query(`SELECT * FROM sales WHERE id = $1`, [id]);
+    const itemsResult = await pool.query(`SELECT quantity, price, name FROM sale_items WHERE sale_id = $1`, [id]);
+    
+    if (saleResult.rows.length === 0) return res.status(404).send("Venta no encontrada");
+    const sale = saleResult.rows[0];
+
+    const doc = new PDFDocument({ size: [226, 800], margins: { top: 10, bottom: 10, left: 10, right: 10 } });
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename=factura_${id}.pdf`);
     doc.pipe(res);
 
-    doc.fontSize(12).text("POS PRO", { align: "center" });
-    doc.text("Pereira - Risaralda", { align: "center" });
-    doc.text("--------------------------------");
-    
-    let subtotal = 0;
-    result.rows.forEach((row) => {
-      const totalItem = Number(row.quantity) * Number(row.price);
-      subtotal += totalItem;
-      doc.text(`${row.quantity}x ${row.name} - $${totalItem.toLocaleString()}`);
+    // Encabezado
+    doc.font('Helvetica-Bold').fontSize(10).text("CADENA COMERCIAL POS PRO", { align: 'center' });
+    doc.font('Helvetica').fontSize(8).text("NIT: 900.000.000-0 | Pereira, Risaralda", { align: 'center' });
+    doc.moveDown(0.3);
+    doc.text("------------------------------------------");
+    doc.text(`TICKET: #${sale.id} | ${new Date(sale.fecha_hora).toLocaleString()}`);
+    doc.text("------------------------------------------");
+    doc.moveDown(0.5);
+
+    // Productos
+    itemsResult.rows.forEach(item => {
+      const valor = Number(item.quantity) * Number(item.price);
+      doc.fontSize(8).text(`${item.quantity}x ${item.name}`, { continued: true });
+      doc.text(`$${valor.toLocaleString()}`, { align: 'right' });
     });
 
-    doc.text("--------------------------------");
-    doc.text(`TOTAL: $${(subtotal * 1.19).toLocaleString()}`);
-    doc.text("Gracias por su compra", { align: "center" });
+    doc.moveDown(0.5);
+    doc.text("------------------------------------------");
+
+    // Totales
+    const total = Number(sale.total);
+    const subtotal = total / 1.19;
+    const iva = total - subtotal;
+    doc.fontSize(8).text(`SUBTOTAL: $${subtotal.toFixed(0).toLocaleString()}`, { align: 'right' });
+    doc.text(`IVA (19%): $${iva.toFixed(0).toLocaleString()}`, { align: 'right' });
+    doc.font('Helvetica-Bold').fontSize(10).text(`TOTAL: $${total.toLocaleString()}`, { align: 'right' });
+    doc.moveDown(1);
+
+    // QR
+    const qrData = `Ticket #${sale.id} | Total: ${total}`;
+    const qrImage = await QRCode.toDataURL(qrData);
+    doc.image(qrImage, { fit: [80, 80], align: 'center' });
+    doc.moveDown(0.5);
+
+    // Código de barras
+    const barcodeBuffer = await bwipjs.toBuffer({
+        bcid: 'code128',
+        text: `1830203792${sale.id}`,
+        scale: 2,
+        height: 10,
+        includetext: false,
+    });
+    doc.image(barcodeBuffer, { fit: [180, 40], align: 'center' });
+    doc.fontSize(7).text(`1830203792${sale.id}`, { align: 'center' });
+    doc.moveDown(0.5);
+
+    // Footer
+    doc.fontSize(6).font('Helvetica').text("GRACIAS POR SU COMPRA", { align: 'center' });
+    doc.text("RESOLUCIÓN DIAN No. 18764101435941", { align: 'center' });
+    doc.text("SOFTWARE: POS PRO V1.0", { align: 'center' });
+
     doc.end();
-  } catch (err) { res.status(500).send("Error"); }
+  } catch (err) { 
+    console.error("Error PDF:", err);
+    res.status(500).send("Error generando PDF"); 
+  }
 });
 
 app.listen(PORT, () => console.log(`🔥 SERVER RUNNING ON PORT ${PORT}`));
