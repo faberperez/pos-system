@@ -12,29 +12,30 @@ export default function Cart({
   total,
   handleSell
 }) {
-
   const safeCart = Array.isArray(cart) ? cart : [];
-
   const cashValue = Number(cash || 0);
   const change = cashValue - total;
+  
+  // Validaciones para habilitar el botón de venta
+  const isCartEmpty = safeCart.length === 0;
+  const isPaymentValid = cashValue >= total;
+  const canSell = !isCartEmpty && isPaymentValid;
 
   return (
     <div className="bg-gray-800 p-6 rounded-3xl shadow-2xl h-fit border border-gray-700 sticky top-6">
-
       <h2 className="text-2xl font-black mb-6 border-b border-gray-700 pb-4">
         Carrito
       </h2>
 
       {/* LISTA PRODUCTOS */}
       <div className="max-h-[40vh] overflow-y-auto mb-6 pr-2">
-
-        {safeCart.length === 0 && (
+        {isCartEmpty && (
           <p className="text-gray-500 text-center py-10 italic">
             Selecciona productos
           </p>
         )}
 
-        {safeCart.map(item => (
+        {safeCart.map((item) => (
           <div
             key={item.id}
             className="flex justify-between items-center mb-4 bg-gray-700/50 p-4 rounded-2xl border border-gray-600"
@@ -47,39 +48,35 @@ export default function Cart({
             </div>
 
             <div className="flex items-center gap-3">
-
               <button
                 onClick={() => {
                   if (item.quantity === 1) {
-                    setCart(safeCart.filter(p => p.id !== item.id));
+                    setCart(safeCart.filter((p) => p.id !== item.id));
                   } else {
-                    setCart(safeCart.map(p =>
-                      p.id === item.id
-                        ? { ...p, quantity: p.quantity - 1 }
-                        : p
-                    ));
+                    setCart(
+                      safeCart.map((p) =>
+                        p.id === item.id ? { ...p, quantity: p.quantity - 1 } : p
+                      )
+                    );
                   }
                 }}
-                className="bg-gray-600 hover:bg-red-500 w-8 h-8 rounded-xl font-bold"
+                className="bg-gray-600 hover:bg-red-500 w-8 h-8 rounded-xl font-bold transition-colors"
               >
                 -
               </button>
-
-              <span className="font-black">{item.quantity}</span>
-
+              <span className="font-black w-6 text-center">{item.quantity}</span>
               <button
                 onClick={() =>
-                  setCart(safeCart.map(p =>
-                    p.id === item.id
-                      ? { ...p, quantity: p.quantity + 1 }
-                      : p
-                  ))
+                  setCart(
+                    safeCart.map((p) =>
+                      p.id === item.id ? { ...p, quantity: p.quantity + 1 } : p
+                    )
+                  )
                 }
-                className="bg-gray-600 hover:bg-green-500 w-8 h-8 rounded-xl font-bold"
+                className="bg-gray-600 hover:bg-green-500 w-8 h-8 rounded-xl font-bold transition-colors"
               >
                 +
               </button>
-
             </div>
           </div>
         ))}
@@ -87,30 +84,25 @@ export default function Cart({
 
       {/* TOTALES */}
       <div className="text-right border-t border-gray-700 pt-6 space-y-1">
-
         <p>Subtotal: ${subtotal.toLocaleString()}</p>
         <p>IVA: ${iva.toLocaleString()}</p>
-
         <p className="text-3xl font-black text-blue-400">
           Total: ${total.toLocaleString()}
         </p>
-
         <p className={`font-bold ${change >= 0 ? "text-green-400" : "text-red-400"}`}>
           Cambio: ${change.toLocaleString()}
         </p>
-
       </div>
 
       {/* PAGO */}
       <div className="mt-6 space-y-4">
-
         <div className="bg-black p-4 rounded-2xl border border-gray-700">
           <p className="text-xs text-gray-500 mb-1 font-bold uppercase">
             Pago recibido
           </p>
-
           <input
             type="number"
+            min="0"
             value={cash}
             onChange={(e) => setCash(e.target.value)}
             className="w-full text-3xl font-black bg-transparent text-white outline-none"
@@ -125,7 +117,6 @@ export default function Cart({
             checked={sendWhatsapp}
             onChange={(e) => setSendWhatsapp(e.target.checked)}
           />
-
           <div className="flex flex-col">
             <span className="text-sm font-bold">Enviar WhatsApp</span>
             <span className="text-xs text-gray-500">Ticket digital</span>
@@ -134,7 +125,7 @@ export default function Cart({
 
         {sendWhatsapp && (
           <input
-            type="text"
+            type="tel"
             placeholder="Número de celular"
             value={clientPhone}
             onChange={(e) => setClientPhone(e.target.value)}
@@ -144,11 +135,15 @@ export default function Cart({
 
         <button
           onClick={handleSell}
-          className="w-full bg-green-600 hover:bg-green-500 text-white font-black py-5 rounded-2xl text-xl"
+          disabled={!canSell}
+          className={`w-full py-5 rounded-2xl text-xl font-black transition-all ${
+            canSell 
+              ? "bg-green-600 hover:bg-green-500 text-white cursor-pointer" 
+              : "bg-gray-600 text-gray-400 cursor-not-allowed opacity-50"
+          }`}
         >
-          CONFIRMAR VENTA ✅
+          {isCartEmpty ? "CARRITO VACÍO" : !isPaymentValid ? "PAGO INSUFICIENTE" : "CONFIRMAR VENTA ✅"}
         </button>
-
       </div>
     </div>
   );

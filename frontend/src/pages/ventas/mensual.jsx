@@ -10,41 +10,44 @@ export default function Mensual() {
   const API_URL =
     import.meta.env.VITE_API_URL || "http://localhost:3000";
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`${API_URL}/reports?type=monthly`);
-
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("ERROR BACKEND:", text);
-          return;
+    useEffect(() => {
+      const fetchData = async () => {
+        try {
+          // 🔥 Limpieza de URL y forzado del prefijo /api/
+          const baseUrl = API_URL.replace(/\/$/, "");
+          const url = `${baseUrl}/api/reports?type=monthly`; 
+          
+          console.log("🚀 Llamando a:", url); // Útil para verificar en la consola
+  
+          const res = await fetch(url);
+  
+          if (!res.ok) {
+            const text = await res.text();
+            console.error("ERROR BACKEND:", text);
+            return;
+          }
+  
+          const data = await res.json();
+          setVentas(data.sales || []);
+  
+          const totalVentas = data.sales?.length || 0;
+          const totalDinero = data.sales?.reduce(
+            (acc, v) => acc + Number(v.total),
+            0
+          );
+  
+          setResumen({
+            total_ventas: totalVentas,
+            total_dinero: totalDinero,
+          });
+  
+        } catch (err) {
+          console.error("Error cargando reportes:", err);
         }
-
-        const data = await res.json();
-
-        // ✅ ventas reales
-        setVentas(data.sales || []);
-
-        // ✅ resumen calculado
-        const totalVentas = data.sales?.length || 0;
-        const totalDinero = data.sales?.reduce(
-          (acc, v) => acc + Number(v.total),
-          0
-        );
-
-        setResumen({
-          total_ventas: totalVentas,
-          total_dinero: totalDinero,
-        });
-
-      } catch (err) {
-        console.error("Error cargando reportes:", err);
-      }
-    };
-
-    fetchData();
-  }, []);
+      };
+  
+      fetchData();
+    }, [API_URL]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
