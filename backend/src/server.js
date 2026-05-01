@@ -42,6 +42,8 @@ app.get("/", (req, res) => {
 // Rutas existentes
 app.use('/api/reports', reportRoutes);
 
+// --- RUTAS DE PRODUCTOS ---
+
 app.get("/products", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM products ORDER BY id ASC");
@@ -50,6 +52,38 @@ app.get("/products", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// NUEVO: Ruta para CREAR producto
+app.post("/products", async (req, res) => {
+  try {
+    const { name, price, stock, image_url } = req.body;
+    const result = await pool.query(
+      "INSERT INTO products (name, price, stock, image_url) VALUES ($1, $2, $3, $4) RETURNING *",
+      [name, price, stock, image_url]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NUEVO: Ruta para EDITAR producto
+app.put("/products/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, price, stock, image_url } = req.body;
+    const result = await pool.query(
+      "UPDATE products SET name = $1, price = $2, stock = $3, image_url = $4 WHERE id = $5 RETURNING *",
+      [name, price, stock, image_url, id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: "Producto no encontrado" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- FIN RUTAS DE PRODUCTOS ---
 
 app.get("/barcode/:code", async (req, res) => {
   try {
