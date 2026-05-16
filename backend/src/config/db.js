@@ -1,28 +1,28 @@
-import pkg from 'pg';
-const { Pool } = pkg;
-import dotenv from "dotenv";
-
-// ✅ 1. Cargar las variables de entorno
+import dotenv from 'dotenv';
 dotenv.config();
 
-// ✅ 2. Limpiar la URL de espacios o comillas accidentales
-const connectionString = process.env.DATABASE_URL ? process.env.DATABASE_URL.trim() : null;
+import pkg from 'pg';
+const { Pool } = pkg;
+
+// ⚡ FALLBACK: Si DATABASE_URL no carga, usar valores directos
+const connectionString = process.env.DATABASE_URL || 
+  'postgresql://postgres:TU_NUEVA_PASSWORD@db.acmskphgmvyxmqjiyszv.supabase.co:5432/postgres';
+
+console.log('🔍 URL usada:', connectionString.replace(/:.*@/, ':****@'));
 
 const pool = new Pool({
   connectionString: connectionString,
-  ssl: {
-    // ✅ 3. Obligatorio para conectar con Supabase desde Render
-    rejectUnauthorized: false, 
-  },
+  ssl: { rejectUnauthorized: false },
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
 });
 
-// ✅ 4. Prueba de conexión automática al arrancar el servidor
-pool.query('SELECT NOW()', (err, res) => {
-  if (err) {
-    console.error('❌ ERROR CRÍTICO: No se pudo conectar a Supabase:', err.message);
-  } else {
-    console.log('✅ CONEXIÓN EXITOSA: El backend ya está hablando con Supabase');
-  }
-});
+pool.query('SELECT NOW()')
+  .then(res => console.log('✅ Conectado a Supabase:', res.rows[0].now))
+  .catch(err => {
+    console.error('❌ Error:', err.message);
+    console.error('Código:', err.code);
+  });
 
 export default pool;

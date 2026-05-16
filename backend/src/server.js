@@ -1,38 +1,27 @@
+
+
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
-import twilio from "twilio";
-import bwipjs from "bwip-js"; // Importación añadida
+import bwipjs from "bwip-js";
 
-// Tus archivos locales
+// 🚀 Tus archivos locales cargan DIRECTO sin NINGÚN intermediario
 import pool from './config/db.js';
 import reportRoutes from './routes/reportRoutes.js';
 
-dotenv.config();
-
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-const TWILIO_WHATSAPP_NUMBER = "whatsapp:+14155238886";
-
 const app = express();
-const PORT = process.env.PORT || 3000;
+
+// ✅ CORREGIDO: Puerto dinámico para Render
+const PORT = process.env.PORT || process.env.SERVER_PORT || 3000;
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 // Helper para limpiar precios
 const cleanPrice = (value) => {
-  return Number(
-    String(value ?? 0)
-      .replace(/\$/g, "")
-      .replace(/\./g, "")
-      .replace(/,/g, "")
-      .trim()
-  ) || 0;
+  const num = Number(value);
+  return isNaN(num) ? 0 : Math.round(num);
 };
 
 // --- RUTAS ---
@@ -110,21 +99,7 @@ app.post("/sales", async (req, res) => {
 
     await client.query("COMMIT");
 
-    let whatsappSent = false;
-    if (client_phone) {
-      try {
-        const cleanPhone = client_phone.replace(/\D/g, '');
-        const pdfUrl = `${process.env.BASE_URL}/sales/${sale.id}/pdf`;
-        await twilioClient.messages.create({
-          from: TWILIO_WHATSAPP_NUMBER,
-          to: `whatsapp:+57${cleanPhone}`,
-          body: `🧾 *POS PRO*\nTicket #${sale.id}\nTotal: $${total.toLocaleString()}\n\nDescarga: ${pdfUrl}`,
-        });
-        whatsappSent = true;
-      } catch (twilioErr) { console.error("❌ ERROR WHATSAPP:", twilioErr.message); }
-    }
-
-    res.json({ id: sale.id, invoice_url: `/sales/${sale.id}/pdf`, whatsapp_sent: whatsappSent });
+    res.json({ id: sale.id, invoice_url: `/sales/${sale.id}/pdf`, whatsapp_sent: false });
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(500).json({ error: err.message });
@@ -173,7 +148,7 @@ app.get("/sales/:id/pdf", async (req, res) => {
     const subtotal = total / 1.19;
     const iva = total - subtotal;
     doc.fontSize(8).text(`SUBTOTAL: $${subtotal.toFixed(0).toLocaleString()}`, { align: 'right' });
-    doc.text(`IVA (19%): $${iva.toFixed(0).toLocaleString()}`, { align: 'right' });
+    doc.text(`Iva (19%): $${iva.toFixed(0).toLocaleString()}`, { align: 'right' });
     doc.font('Helvetica-Bold').fontSize(10).text(`TOTAL: $${total.toLocaleString()}`, { align: 'right' });
     doc.moveDown(1);
 
@@ -207,4 +182,8 @@ app.get("/sales/:id/pdf", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`🔥 SERVER RUNNING ON PORT ${PORT}`));
+// ✅ Inicio del servidor con log mejorado
+app.listen(PORT, () => {
+  console.log(`🚀 [SISTEMA LIMPIO] Servidor corriendo en puerto ${PORT}`);
+  console.log(`📡 URL: http://localhost:${PORT}`);
+});
